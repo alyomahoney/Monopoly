@@ -1,0 +1,585 @@
+---
+title: "Mathematics in Monopoly&reg;"
+author: "Aly O'Mahoney"
+#date: "06/06/2020"
+header-includes:
+  - \usepackage{floatrow}
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r initial, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(kableExtra)
+library(markovchain)
+library(knitr)# library used for analysing markov chains
+library(gridExtra)
+```
+
+```{css, echo=FALSE}
+pre, code {
+  max-height: 300px;
+  overflow-y: auto;
+}
+```
+
+```{js logo-js, echo=FALSE}
+$(document).ready(function() {
+  $('#header').parent().prepend('<div id=\"logo\"><img src=\"logo.jpg\" style=\"position:absolute; top:0; right:0; padding:20px; height:150px\"></div>');
+  $('#header').css('margin-right', '120px')
+});
+```
+
+
+# Preface {-}
+
+As far as board games go, Monopoly&reg; may be considered an all-time classic. Owning property to generate revenue in attempt to gain financial and proprietary dominance over opponents is easier said than done in real life, however Monopoly&reg; offers a make-belief alternative to emulate the sense of power and competition. That being said, growing up I was interested in numbers more than anything - probability to be specific. Whenever I played with my family, whilst their focus was on fighting over Mayfair and Park Lane, I always wanted to know things like where players were most likely to end up on the board - referred to as 'hot spots'. There was a general understanding that Bow Street, Malborough Street and Vine Street (the orange properties) were potential hot spots as they were 6, 8 and 9 spaces after jail respectively. However, I wanted to know more. 'Are Mayfair and Park Lane really worth it?' 'What about the utilities?' As a young child who only really understood basic probability, such as dice rolling, I came to sad realisation that investigating these questions was perhaps 'above my pay grade'.
+
+That young child eventually went on to secure a Bachelor's Degree in Mathematics and Statistics from the University of Edinburgh and felt ready to revisit the game of Monopoly&reg;. Thanks to studying a course 'Stochastic Modelling' it was immediately apparent that the game of Monopoly&reg; could be modelled as a discrete time Markov chain (DTMC), which is the focus of this report.
+
+# Introduction
+
+## Exploring the DTMC {-}
+
+I first decided to establish the state space of the DTMC. The intuitive answer is that the state space is simply the 41 available spaces on the board - perhaps with the exception of 'Go to Jail' as it is impossible for a player to remain there after their turn is over. This is where I encountered the first hurdle, as carrying on like this would have resulted in the DTMC failling to satisfy the Markov property. The reason is that the probability distribution would depend on what had happened previously. In particular, notice that a player is more likely to end up in Jail if they have previously thrown two consecutive doubles than if it is their first roll of the dice - since throwing three consecutive doubles lands a player in Jail.
+
+If I wishied to continue with the DTMC approach I realised that the state space would have to consist of three states per space on the board - the first given that no doubles were rolled to reach the space, the second given that one double was rolled to reach the space, and the third given that two doubles were rolled to reach the space. In turn, this meant that there would have to be three different states for when a payer was at Go, Old Kent Road, etc.
+
+The second hurdle I approached was the fact that players can choose to pay to escape Jail or they can attempt to roll a double. This lead me to make the desicion to have two seperate DTMCs:
+
+* __Escape__: Adopting the strategy of paying or using a 'Get out of Jail Free Card' (GJFC).
+* __Remain__: Deciding to try and roll doubles to escape Jail. 
+
+It is well known that staying in Jail for as long as possible towards the end of the game is a favoured tactic as it reduces the chances of landing on opponents' properties and paying them rent. However, this tactic is not favourable near the beginning of a game as the aim is to buy as many properties as possible. When considering long run probabilities the first strategy seems more appropriate, however I decided to conduct the analysis accounting for both strategies.
+
+When considering the remain strategy I also realised that two new states needed to be accounted for. The first being that a player is in Jail and they have had one unsuccessful attempt at rolling a double to escape. The secing being that a player is in Jail and they have had two unsuccessful attempts at rolling a double to escape.
+
+## Assumptions {-}
+
+1. The dice being rolled are fair
+2. If a player is in Jail and has had two unsuccessful attemts at escaping, they to not pay or use a GJFC to escape before their third attempt.
+3. When drawing a Chance or Community Chest card, there is an equal chance of drawing any card that exists in each deck.
+4. The problem can be modelled as a DTMC.
+
+
+## Setting up the Problem in R {-}
+
+This code chunk illustrates how the problem was set up. In summary, the following were defined:
+
+* A simplified state space, containing all spaces on the board.
+* The state space (with three states per space).
+* The probability distributions for having landed on each of the Community Chest and Chance spaces.
+* The probability distribusion of the possible outcomes of the dice.
+* A further variant of the state space, which will be useful when constructing the main function later on.
+* The chosen colours to represent each space.
+
+```{r setup}
+
+# define all the spaces on the board (excluding 'go to jail' since a player cant end up there)
+state_space_simple <- c("go","old_kent_road","community_chest1","whitechapel_road","income_tax",
+                        "king's_cross_station","the_angel,_islington","chance1","euston_road","pentonville_road",
+                        "visiting_jail","pall_mall","electric_company","whitehall","northumberland_avenue",
+                        "marylebone_station","bow_street","community_chest2","malborough_street","vine_street",
+                        "free_parking","strand","chance2","fleet_street","trafalgar_square",
+                        "fenchurch_st._station","leicester_square","coventry_street","water_works","piccadilly","in_jail",
+                        "regent_street","oxford_street","community_chest3","bond_street","liverpool_st._station",
+                        "chance3","park_lane","super_tax","mayfair")
+
+# define each state for number of doubles previously rolled.
+# state_space_x defines each state given x doubles have been rolled prior
+state_space0 <- paste0("0",state_space_simple)
+state_space1 <- paste0("1",state_space_simple)
+state_space2 <- paste0("2",state_space_simple)
+
+# entire state space
+# in_jailx denotes the state space in which there have been x unsuccessful attempts to escape jail
+state_space <- c(state_space0,state_space1,state_space2,"3in_jail","in_jail1","in_jail2") 
+
+# transition probabilities after landing on community chest
+community_chest_transition1 <-community_chest_transition2 <- community_chest_transition3 <- rep(0,40)
+names(community_chest_transition1) <- names(community_chest_transition2) <- names(community_chest_transition3) <- state_space_simple
+
+# probabilities based on the cards in each deck
+community_chest_transition1[c("go","in_jail","community_chest1")] <- c(1/16,1/16,14/16)
+community_chest_transition2[c("go","in_jail","community_chest2")] <- c(1/16,1/16,14/16)
+community_chest_transition3[c("go","in_jail","community_chest3")] <- c(1/16,1/16,14/16)
+
+# transition probabilities after landing on chance
+chance_transition1 <- chance_transition2 <- chance_transition3 <- rep(0,40)
+names(chance_transition1) <- names(chance_transition2) <- names(chance_transition3) <- state_space_simple
+
+# probabilities based on the cards in each deck
+chance_transition1[c("go","income_tax","electric_company","in_jail","marylebone_station",
+                     "pall_mall","trafalgar_square","king's_cross_station","mayfair","chance1")] <- c(1/16,1/16,1/16,1/16,2/16,1/16,1/16,1/16,1/16,6/16)
+chance_transition2[c("go","vine_street","water_works","in_jail","fenchurch_st._station",
+                     "pall_mall","trafalgar_square","king's_cross_station","mayfair","chance2")] <- c(1/16,1/16,1/16,1/16,2/16,1/16,1/16,1/16,1/16,6/16)
+chance_transition3[c("go","community_chest3","electric_company","in_jail",
+                     "king's_cross_station","pall_mall","trafalgar_square","mayfair","chance3")] <- c(1/16,1/16,1/16,1/16,3/16,1/16,1/16,1/16,6/16)
+
+
+# initialise empty named vector
+empty <- rep(0,123)
+names(empty) <- state_space
+
+# define probabilities of dice outcomes (4 = 1+3 or 3+1, 4d = 2+2)
+rolls <- c(p_3  = 2/36,
+           p_4  = 2/36,
+           p_5  = 4/36,
+           p_6  = 4/36,
+           p_7  = 6/36,
+           p_8  = 4/36,
+           p_9  = 4/36,
+           p_10 = 2/36,
+           p_11 = 2/36,
+           p_2d = 1/36,
+           p_4d = 1/36,
+           p_6d = 1/36,
+           p_8d = 1/36,
+           p_10d= 1/36,
+           p_12d= 1/36)
+
+# extended simple state space used for the main function 'rows'
+state_space_rep    <- c("go","old_kent_road","community_chest1","whitechapel_road","income_tax",
+                        "king's_cross_station","the_angel,_islington","chance1","euston_road","pentonville_road",
+                        "visiting_jail","pall_mall","electric_company","whitehall","northumberland_avenue",
+                        "marylebone_station","bow_street","community_chest2","malborough_street","vine_street",
+                        "free_parking","strand","chance2","fleet_street","trafalgar_square",
+                        "fenchurch_st._station","leicester_square","coventry_street","water_works","piccadilly",
+                        "in_jail","regent_street","oxford_street","community_chest3","bond_street","liverpool_st._station",
+                        "chance3","park_lane","super_tax","mayfair",
+                        "go","old_kent_road","community_chest1","whitechapel_road","income_tax",
+                        "king's_cross_station","the_angel,_islington","chance1","euston_road","pentonville_road",
+                        "visiting_jail","pall_mall")
+
+# defining the colour of each space
+colour_simple <- c("tan","brown","aquamarine","brown","brown1","black","skyblue2","gold4","skyblue2","skyblue2",
+                   "grey","purple","bisque3","purple","purple","black","orange","gold4","orange","orange",
+                   "lightpink","red","aquamarine","red","red","black","yellow","yellow","bisque3","yellow",
+                   "grey","green","green","aquamarine","green","black","gold4","blue","brown1","blue")
+
+colour_label <- c("Brown","Light blue","Pink/purple","Orange","Red","Yellow","Green","Dark blue")
+
+```
+
+
+
+# Formulating the DTMC
+
+As expected, the state description of the DTMC is where the player is on the board, accounting for the number of doubles that have been rolled to reach that space. The state space is defined in the code chunk in [Setting up the Problem in R](#setting-up-the-problem-in-r).
+
+## Calculating the rows of the transition matrix {-}
+
+
+I decided to create a function which would calculate the transition rows. The function is quite neat, however it comes at a slight cost of incorrectly calculating the Jail rows. I decided that I would use the function and simply modify the Jail rows after. This matrix assumes that the 'escape' strategy is being used, as I realised it would be relatively easy to modify it to fit the 'remain' strategy later.
+
+
+```{r rows_function}
+
+# this function takes input s, the starting position of the piece (0 = go, 1 = old kent road, etc.)
+# it returns a list containing three transition rows
+# the first row assumes that no doubles have been thrown, the second assumes one double has just been thrown and the third assumes two doubles have just been thrown
+# for example, rows(1)[[2]] returns the transition row when starting at old kent road given that exactly one double has been previously thrown
+
+rows <- function(s) {
+  
+# initialise empty vector to be filled in
+total <- empty
+
+# the first loop accumulates the probabilities for throwing non-doubles    
+for (i in 1:9) {
+  
+  temp <- empty
+  
+  if (str_detect(state_space_rep[i+3+s],"community_chest1")) {
+    temp[1:40] <- community_chest_transition1*rolls[i]
+    
+  }else if (str_detect(state_space_rep[i+3+s],"community_chest2")) {
+    temp[1:40] <- community_chest_transition2*rolls[i]
+    
+  }else if (str_detect(state_space_rep[i+3+s],"community_chest3")) {
+    temp[1:40] <- community_chest_transition3*rolls[i]
+    
+  }else if (str_detect(state_space_rep[i+3+s],"chance1")) {
+    temp[1:40] <- chance_transition1*rolls[i]
+    
+  }else if (str_detect(state_space_rep[i+3+s],"chance2")) {
+    temp[1:40] <- chance_transition2*rolls[i]
+    
+  }else if (str_detect(state_space_rep[i+3+s],"chance3")) {
+    temp[1:40] <- chance_transition3*rolls[i]
+    
+  }else {
+    temp[paste0("0",state_space_rep[i+3+s])] <- rolls[i]
+  } 
+  
+  total <- total + temp
+}
+
+# the second loop accumulates the probabilities for throwing doubles
+for (i in 10:15) {
+  
+  temp <- empty
+  
+  if (str_detect(state_space_rep[2*i-17+s],"community_chest1")) {
+    temp[41:80] <- community_chest_transition1*rolls[i]
+    
+  }else if (str_detect(state_space_rep[2*i-17+s],"community_chest2")) {
+    temp[41:80] <- community_chest_transition2*rolls[i]
+    
+  }else if (str_detect(state_space_rep[2*i-17+s],"community_chest3")) {
+    temp[41:80] <- community_chest_transition3*rolls[i]
+    
+  }else if (str_detect(state_space_rep[2*i-17+s],"chance1")) {
+    temp[41:80] <- chance_transition1*rolls[i]
+    
+  }else if (str_detect(state_space_rep[2*i-17+s],"chance2")) {
+    temp[41:80] <- chance_transition2*rolls[i]
+    
+  }else if (str_detect(state_space_rep[2*i-17+s],"chance3")) {
+    temp[41:80] <- chance_transition3*rolls[i]
+    
+  }else {
+    temp[paste0("1",state_space_rep[2*i-17+s])] <- rolls[i]
+  } 
+  
+  total <- total + temp
+}
+
+# 'total' now contains the transition rows given that no doubles were previously thrown
+# 'total1' and 'total2' will account for one and two doubles having been thrown previously respectively
+total1 <- empty
+total1[1:40] <- total[1:40]
+total1[81:120] <- total[41:80]
+
+total2 <- empty
+total2[1:40] <- total[1:40]
+total2["3in_jail"] <- 1/6 # 3 consecutive doubles lands a player in jail
+
+list(total,total1,total2) # return three rows as a list
+
+}
+
+```
+
+
+The function `rows` assumes that if a player lands on Go to Jail they stay there and carry on their next turn as normal. This is obviously not the case as the Go to Jail space instruct a player to immetiately move to Jail. The code chunk below illustrates the steps taken to construct the correct Jail rows.
+
+```{r jail}
+
+# this script handles the intricacies involved when dealing with jail
+
+# store all transition rows in an array
+all_rows <- sapply(0:39,rows)
+
+# an empty matrix which will later store the transition probabilities
+transition_remain <- matrix(rep(0,123^2),ncol=123,dimnames=list(state_space,state_space))
+
+# filling out the transition matrix
+for (j in 1:3) {
+  for (i in 1:40) {
+    transition_remain[i+(j-1)*40,] <- all_rows[j,i][[1]]
+  }
+}
+
+# initialise transition row for when starting at visiting jail (which is the same as leaving jail)
+vj0 <- transition_remain["0visiting_jail",]
+
+# 2d
+ij_2d <- empty
+ij_2d["0electric_company"] <- rolls["p_2d"]
+
+# 4d
+ij_4d <- empty
+ij_4d["0northumberland_avenue"] <- rolls["p_4d"]
+
+# 6d
+ij_6d <- empty
+ij_6d["0bow_street"] <- rolls["p_6d"]
+
+# 8d
+ij_8d <- empty
+ij_8d["0malborough_street"] <- rolls["p_8d"]
+
+# 10d
+ij_10d <- empty
+ij_10d["0free_parking"] <- rolls["p_10d"]
+
+# 12d
+ij_12d <- empty
+ij_12d[1:40] <-chance_transition2*rolls["p_12d"]
+
+# odd
+ij_odd <- empty
+ij_odd["in_jail1"] <- 5/6
+
+# constructing the transition row for first throw in jail (regardless of number of prior doubles)
+ij0 <- ij_2d+ij_4d+ij_6d+ij_8d+ij_10d+ij_12d+ij_odd
+
+# transition row for second throw in jail
+ij1 <- empty
+ij1[1:40] <- ij0[1:40]
+ij1["in_jail2"] <- 5/6
+
+# transition row for third throw in jail
+ij2 <- empty
+ij2[1:40] <- vj0[1:40]+vj0[41:80] # throwing a double to escape jail does not permit another throw
+
+```
+
+## Constructing Both Transition Matrices {-.tabset} 
+
+I then needed to modify the transition matrix so that it contained the correct Jail rows. Furthermore, I needed to construct a matrix for each strategy. I first constructed the 'remain' matrix and then made a copy wich I modified to fit the 'escape' strategy.
+
+### Remain {-}
+
+The incorrect jail rows were replaced with the correctly calculated rows from [2.1.2](#modifying-the-jail-rows). The code below shows how the final transition matrix was constructed.
+
+```{r construction_remain}
+# as it stands, the transition rows starting as the jail spaces are actually incorrect and need to be manually adjusted
+transition_remain["0in_jail",] <- transition_remain["1in_jail",] <- transition_remain["2in_jail",] <- transition_remain["3in_jail",] <- ij0
+transition_remain["in_jail1",] <- ij1
+transition_remain["in_jail2",] <- ij2
+
+# displaying the transition matrix
+# kable(data.frame(transition_remain),col.names = gsub("[.]", " ", colnames(transition_remain)),caption="Transition matrix when adopting the remain strategy") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% scroll_box(width = "100%", height = "500px",fixed_thead = T)
+
+
+```
+
+
+### Escape {-}
+
+The matrix required for when adopting the escape strategy was similar to the remain matrix however the jail rows needed to be modified and the final two states needed to be removed. The vode below illustrates how the final transition matrix was constructed.
+
+```{r construction_escape}
+# start by replicating the previous transition matrix
+transition_escape <- transition_remain
+
+# again, manually adjust the transition rows for the jail spaces
+transition_escape["0in_jail",] <- transition_escape["1in_jail",] <- transition_escape["2in_jail",] <- transition_escape["3in_jail",] <- transition_remain["0visiting_jail",]
+
+# exclude the last two states as when adopting the 'escape' strategy a player never stays in jail
+transition_escape <- transition_escape[-122:-123,-122:-123]
+
+# displaying the transition matrix
+# kable(data.frame(transition_escape),col.names = gsub("[.]", " ", colnames(transition_escape)),caption="Transition matrix when adopting the escape strategy") %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>% scroll_box(width = "100%", height = "500px",fixed_thead = T)
+
+```
+
+# Stationary Distribution {.tabset}
+
+This section answers the question 'what are the hot spots in a game of Monopoly&reg;?' The long run probability distribution (stationary distribution) of each transition matrix it will highlight where players are most likely to spend their time as the game progresses. Before the results are calculated and displayed, a tidy version of the state names is constructed - the code is shown below.
+
+```{r proper}
+
+# function to capitalise first letter of each word
+simpleCap <- function(x) {
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), substring(s, 2),
+        sep="", collapse=" ")
+}
+
+# replace underscores with spaces
+state_space_proper <- str_replace_all(state_space_simple,"_"," ")
+
+# use simpleCap function on state space
+for (i in 1:length(state_space_proper)) {
+  state_space_proper[i] <- simpleCap(state_space_proper[i])
+}
+
+# add space between states and numbers
+state_space_proper <- str_replace(state_space_proper,"([a-z]*)(\\d)","\\1 \\2")
+
+```
+
+
+The stationary distribution can be calculated manually by solving the equations $\pi=P\pi$ and $\sum\limits_{\pi_i}$ where $P$ is the transition matrix and $\pi$ is the stationary distribution. However, with such large transition matrices it would be impractical do this by hand. I decided to use the 'markovchain' package to calculate the stationary distribution.
+
+
+
+
+
+
+## Remain {-}
+
+```{r longrun_remain, warning=FALSE}
+
+# initialise the markov chain
+transition_matrix_remain <- new("markovchain", transitionMatrix=transition_remain)
+
+# create a data frame with the stationary distribution
+large_ss_remain <- steadyStates(transition_matrix_remain) %>% t() %>% data.frame()
+
+# include the state names with some basic string processing to remove the numbers indicating the amount of previously thrown doubles
+tidy_ish_ss_remain <- large_ss_remain %>% mutate(state=str_replace(str_replace(rownames(large_ss_remain),"^\\d?",""),"in_jail\\d?","in_jail"))
+
+# the final stationary distribution
+tidy_ss_remain <- tapply(tidy_ish_ss_remain$., tidy_ish_ss_remain$state, FUN=sum)[state_space_simple]
+
+# rename with tidy labels
+names(tidy_ss_remain) <- state_space_proper
+
+# display the stationary distribution
+df_ss_remain <- data.frame(Space=names(tidy_ss_remain), "Proportion of Time Spent"=tidy_ss_remain)
+rownames(df_ss_remain) <- NULL
+
+prop_table_remain <- kable(df_ss_remain,col.names = gsub("[.]", " ", names(df_ss_remain))) %>%
+  kable_styling(fixed_thead=T, bootstrap_options = c("hover", "condensed", "responsive")) %>%  
+  row_spec(c(2,4), color = "white", background = "hsl(29, 69%, 34%)") %>%
+  row_spec(c(7,9,10), color = "black", background = "hsl(205, 82%, 73%)") %>%
+  row_spec(c(12,14,15), color = "white", background = "hsl(297, 77%, 47%)") %>%
+  row_spec(c(17,19,20), color = "black", background = "hsl(35, 100%, 54%)") %>%
+  row_spec(c(22,24,25), color = "white", background = "hsl(0, 76%, 49%)") %>%
+  row_spec(c(27,28,30), color = "black", background = "hsl(60, 88%, 60%)") %>%
+  row_spec(c(32,33,35), color = "white", background = "hsl(111, 74%, 39%)") %>%
+  row_spec(c(38,40), color = "white", background = "hsl(218, 62%, 33%)") %>%
+  scroll_box(width = "100%", height = "700px") 
+
+
+
+prop_col_remain <- data.frame(tidy_ss_remain) %>% 
+  mutate(Colour = factor(colour_simple,levels=unique(colour_simple))) %>%
+  group_by(Colour) %>%
+  summarize(Proportion=sum(tidy_ss_remain)) %>%
+  filter(Colour %in% c("brown","skyblue2","purple","orange","red","yellow","green","blue")) %>%
+  mutate(Colour=factor(colour_label,levels=unique(colour_label)))
+
+
+# proportion of time spent at each colour
+
+plot_remain <- prop_col_remain %>%
+  ggplot(aes(Colour, Proportion, col=Colour,group=1)) +
+  stat_summary(fun.y=sum, geom="line",col="black") +
+  geom_point(size=4) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  labs(x="Colour of set", y="Proportion of time spent", title="Proportion of Time Spent at Each Colour Set") +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(size=18)) +
+  scale_color_manual(values=c("brown","skyblue2","purple","orange","red","yellow","green","blue"))
+
+```
+
+<div class = "row">
+<div class = "col-md-4">
+```{r echo=FALSE}
+prop_table_remain
+```
+</div>
+
+<div class = "col-md-8"> 
+
+
+The table illustrates the proportions of time spent at each space on the board. It is important to note that the Chance and Community Chest proportions are quite low as players are often moved to other spaces as a result of landing on these spaces.
+
+The graph below highlights the proportions of time spent at each coloured set. As expected, the brown and dark blue sets are quite low since there are only two properties in each of these sets. This graph also confirms the suspicion that the orange properties are hotspots as their proportions have the highest total. To my surprise, the light blue set has a relatively low proportion. Because of cards forcing players to Go I assumed that the light blue set was desirable - perhaps I was wrong.
+
+
+```{r echo=FALSE}
+plot_remain
+```
+</div>
+</div>
+
+
+
+
+
+## Escape {-}
+
+```{r longrun_escape, warning=FALSE}
+
+# initialise the markov chain
+transition_matrix_escape <- new("markovchain", transitionMatrix=transition_escape)
+
+# create a data frame with the stationary distribution
+large_ss_escape <- steadyStates(transition_matrix_escape) %>% t() %>% data.frame()
+
+# include the state names with some basic string processing to remove the numbers indicating the amount of previously thrown doubles
+tidy_ish_ss_escape <- large_ss_escape %>% mutate(state=str_replace(str_replace(rownames(large_ss_escape),"^\\d?",""),"in_jail\\d?","in_jail"))
+
+# the final stationary distribution
+tidy_ss_escape <- tapply(tidy_ish_ss_escape$., tidy_ish_ss_escape$state, FUN=sum)[state_space_simple]
+
+# rename with tidy labels
+names(tidy_ss_escape) <- state_space_proper
+
+# display the stationary distribution
+df_ss_escape <- data.frame(Space=names(tidy_ss_escape), "Proportion of Time Spent"=tidy_ss_escape)
+rownames(df_ss_escape) <- NULL
+
+prop_table_escape <- kable(df_ss_escape,col.names = gsub("[.]", " ", names(df_ss_escape))) %>%
+  kable_styling(bootstrap_options = c("hover", "condensed", "responsive")) %>%
+  row_spec(c(2,4), color = "white", background = "hsl(29, 69%, 34%)") %>%
+  row_spec(c(7,9,10), color = "black", background = "hsl(205, 82%, 73%)") %>%
+  row_spec(c(12,14,15), color = "white", background = "hsl(297, 77%, 47%)") %>%
+  row_spec(c(17,19,20), color = "black", background = "hsl(35, 100%, 54%)") %>%
+  row_spec(c(22,24,25), color = "white", background = "hsl(0, 76%, 49%)") %>%
+  row_spec(c(27,28,30), color = "black", background = "hsl(60, 88%, 60%)") %>%
+  row_spec(c(32,33,35), color = "white", background = "hsl(111, 74%, 39%)") %>%
+  row_spec(c(38,40), color = "white", background = "hsl(218, 62%, 33%)") %>%
+  scroll_box(width = "100%", height = "700px")
+
+
+prop_col_escape <- data.frame(tidy_ss_escape) %>% 
+  mutate(Colour = factor(colour_simple,levels=unique(colour_simple))) %>%
+  group_by(Colour) %>%
+  summarize(Proportion=sum(tidy_ss_escape)) %>%
+  filter(Colour %in% c("brown","skyblue2","purple","orange","red","yellow","green","blue")) %>%
+  mutate(Colour=factor(colour_label,levels=unique(colour_label)))
+
+
+# proportion of time spent at each colour
+
+plot_escape <- prop_col_escape %>%
+  ggplot(aes(Colour, Proportion, col=Colour,group=1)) +
+  stat_summary(fun.y=sum, geom="line",col="black") +
+  geom_point(size=4) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  labs(x="Colour of set", y="Proportion of time spent", title="Proportion of Time Spent at Each Colour Set") +
+  theme(legend.position = "none") +
+  theme(plot.title = element_text(size=18)) +
+  scale_color_manual(values=c("brown","skyblue2","purple","orange","red","yellow","green","blue"))
+
+```
+
+
+<div class = "row">
+<div class = "col-md-4">
+```{r echo=FALSE}
+prop_table_escape
+```
+</div>
+
+<div class = "col-md-8"> 
+
+
+The table illustrates the proportions of time spent at each space on the board. It is important to note that the Chance and Community Chest proportions are quite low as players are often moved to other spaces as a result of landing on these spaces.
+
+The graph below highlights the proportions of time spent at each coloured set. As expected, the brown and dark blue sets are quite low since there are only two properties in each of these sets. This graph also confirms the suspicion that the orange properties are hotspots as their proportions have the highest total. To my surprise, the light blue set has a relatively low proportion. Because of cards forcing players to Go I assumed that the light blue set was desirable - perhaps I was wrong.
+
+
+```{r echo=FALSE}
+plot_escape
+```
+</div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
