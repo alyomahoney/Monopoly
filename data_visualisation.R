@@ -26,5 +26,5 @@ prop_col_remain %>%
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank()) +
-  scale_fill_manual(values=c("brown","skyblue2","purple","orange","red","yellow","green","blue"))
+  scale_fill_manual(values=c("#884403","skyblue2","#CC0099","orange","#EE0000","yellow","#44BB11","#003399"))
   
