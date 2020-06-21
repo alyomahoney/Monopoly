@@ -20,11 +20,11 @@ prop_col_remain <- data.frame(tidy_ss_remain) %>%
 # proportion of time spent at each colour
 
 prop_col_remain %>%
-  ggplot(aes(Colour, Proportion, col=Colour,group=1)) +
-  stat_summary(fun.y=sum, geom="line",col="black") +
-  geom_point(size=2) +
+  ggplot(aes(Colour, Proportion, fill=Colour)) +
+  theme_gdocs() +
+  geom_bar(stat="identity") +
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank()) +
-  scale_color_manual(values=c("brown","skyblue2","purple","orange","red","yellow","green","blue"))
+  scale_fill_manual(values=c("brown","skyblue2","purple","orange","red","yellow","green","blue"))
   

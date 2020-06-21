@@ -4,9 +4,16 @@ author: "Aly O'Mahoney"
 #date: "06/06/2020"
 header-includes:
   - \usepackage{floatrow}
+    \usepackage{fontawesome}
+    \usepackage[utf8]{inputenc}
+    \usepackage[english]{babel}
+    \usepackage{textcomp} % for the Won symbol
+    \usepackage{graphicx}
 output: 
-  github_document
-
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
 ---
 
 ```{r initial, include=FALSE}
@@ -16,6 +23,8 @@ library(kableExtra)
 library(markovchain)
 library(knitr)# library used for analysing markov chains
 library(gridExtra)
+library(ggthemes)
+library(rvest)
 ```
 
 ```{css, echo=FALSE}
@@ -26,10 +35,17 @@ pre, code {
 ```
 
 ```{js logo-js, echo=FALSE}
-$(document).ready(function() {
-  $('#header').parent().prepend('<div id=\"logo\"><img src=\"logo.jpg\" style=\"position:absolute; top:0; right:0; padding:20px; height:150px\"></div>');
-  $('#header').css('margin-right', '120px')
-});
+#$(document).ready(function() {
+#  $('#header').parent().prepend('<div id=\"logo\"><img src=\"logo.jpg\" style=\"position:absolute; top:0; right:0; #padding:20px; height:150px\"></div>');
+#  $('#header').css('margin-right', '120px')
+#});
+```
+
+
+```{r, echo=FALSE}
+htmltools::img(src = knitr::image_uri("/Users/AlyOMahoney/Desktop/Monopoly/logo.jpg"), 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; right:0; padding:10px; width: 150px;')
 ```
 
 
@@ -49,12 +65,12 @@ If I wishied to continue with the DTMC approach I realised that the state space 
 
 The second hurdle I approached was the fact that players can choose to pay to escape Jail or they can attempt to roll a double. This lead me to make the desicion to have two seperate DTMCs:
 
-* __Escape__: Adopting the strategy of paying or using a 'Get out of Jail Free Card' (GJFC).
+* __Escape__: Adopting the strategy of paying to escape Jail or using a 'Get out of Jail Free Card' (GJFC).
 * __Remain__: Deciding to try and roll doubles to escape Jail. 
 
 It is well known that staying in Jail for as long as possible towards the end of the game is a favoured tactic as it reduces the chances of landing on opponents' properties and paying them rent. However, this tactic is not favourable near the beginning of a game as the aim is to buy as many properties as possible. When considering long run probabilities the first strategy seems more appropriate, however I decided to conduct the analysis accounting for both strategies.
 
-When considering the remain strategy I also realised that two new states needed to be accounted for. The first being that a player is in Jail and they have had one unsuccessful attempt at rolling a double to escape. The secing being that a player is in Jail and they have had two unsuccessful attempts at rolling a double to escape.
+When considering the remain strategy I also realised that two new states needed to be accounted for. The first being that a player is in Jail and they have had one unsuccessful attempt at rolling a double to escape. The second being that a player is in Jail and they have had two unsuccessful attempts at rolling a double to escape.
 
 ## Assumptions {-}
 
@@ -72,7 +88,7 @@ This code chunk illustrates how the problem was set up. In summary, the followin
 * The state space (with three states per space).
 * The probability distributions for having landed on each of the Community Chest and Chance spaces.
 * The probability distribusion of the possible outcomes of the dice.
-* A further variant of the state space, which will be useful when constructing the main function later on.
+* A further variant of the state space, which will be useful when constructing the function `rows` later on.
 * The chosen colours to represent each space.
 
 ```{r setup}
@@ -81,7 +97,7 @@ This code chunk illustrates how the problem was set up. In summary, the followin
 state_space_simple <- c("go","old_kent_road","community_chest1","whitechapel_road","income_tax",
                         "king's_cross_station","the_angel,_islington","chance1","euston_road","pentonville_road",
                         "visiting_jail","pall_mall","electric_company","whitehall","northumberland_avenue",
-                        "marylebone_station","bow_street","community_chest2","malborough_street","vine_street",
+                        "marylebone_station","bow_street","community_chest2","marlborough_street","vine_street",
                         "free_parking","strand","chance2","fleet_street","trafalgar_square",
                         "fenchurch_st._station","leicester_square","coventry_street","water_works","piccadilly","in_jail",
                         "regent_street","oxford_street","community_chest3","bond_street","liverpool_st._station",
@@ -144,7 +160,7 @@ rolls <- c(p_3  = 2/36,
 state_space_rep    <- c("go","old_kent_road","community_chest1","whitechapel_road","income_tax",
                         "king's_cross_station","the_angel,_islington","chance1","euston_road","pentonville_road",
                         "visiting_jail","pall_mall","electric_company","whitehall","northumberland_avenue",
-                        "marylebone_station","bow_street","community_chest2","malborough_street","vine_street",
+                        "marylebone_station","bow_street","community_chest2","marlborough_street","vine_street",
                         "free_parking","strand","chance2","fleet_street","trafalgar_square",
                         "fenchurch_st._station","leicester_square","coventry_street","water_works","piccadilly",
                         "in_jail","regent_street","oxford_street","community_chest3","bond_street","liverpool_st._station",
@@ -264,7 +280,7 @@ list(total,total1,total2) # return three rows as a list
 ```
 
 
-The function `rows` assumes that if a player lands on Go to Jail they stay there and carry on their next turn as normal. This is obviously not the case as the Go to Jail space instruct a player to immetiately move to Jail. The code chunk below illustrates the steps taken to construct the correct Jail rows.
+The function `rows` assumes that if a player lands on Go to Jail they stay there and carry on their next turn as normal. This is obviously not the case as the Go to Jail space instructs a player to immetiately move to Jail. The code chunk below illustrates the steps taken to construct the correct Jail rows.
 
 ```{r jail}
 
@@ -300,7 +316,7 @@ ij_6d["0bow_street"] <- rolls["p_6d"]
 
 # 8d
 ij_8d <- empty
-ij_8d["0malborough_street"] <- rolls["p_8d"]
+ij_8d["0marlborough_street"] <- rolls["p_8d"]
 
 # 10d
 ij_10d <- empty
@@ -351,7 +367,7 @@ transition_remain["in_jail2",] <- ij2
 
 ### Escape {-}
 
-The matrix required for when adopting the escape strategy was similar to the remain matrix however the jail rows needed to be modified and the final two states needed to be removed. The vode below illustrates how the final transition matrix was constructed.
+The matrix required for when adopting the escape strategy was similar to the remain matrix however the jail rows needed to be modified and the final two states needed to be removed. The code below illustrates how the final transition matrix was constructed.
 
 ```{r construction_escape}
 # start by replicating the previous transition matrix
@@ -370,7 +386,7 @@ transition_escape <- transition_escape[-122:-123,-122:-123]
 
 # Stationary Distribution {.tabset}
 
-This section answers the question 'what are the hot spots in a game of Monopoly&reg;?' The long run probability distribution (stationary distribution) of each transition matrix it will highlight where players are most likely to spend their time as the game progresses. Before the results are calculated and displayed, a tidy version of the state names is constructed - the code is shown below.
+This section answers the question 'what are the hot spots in a game of Monopoly&reg;?' The long run probability distribution (stationary distribution) of each transition matrix will highlight where players are most likely to spend their time as the game progresses. Before the results are calculated and displayed, a tidy version of the state names is constructed - the code is shown below.
 
 ```{r proper}
 
@@ -395,7 +411,7 @@ state_space_proper <- str_replace(state_space_proper,"([a-z]*)(\\d)","\\1 \\2")
 ```
 
 
-The stationary distribution can be calculated manually by solving the equations $\pi=P\pi$ and $\sum\limits_{\pi_i}$ where $P$ is the transition matrix and $\pi$ is the stationary distribution. However, with such large transition matrices it would be impractical do this by hand. I decided to use the 'markovchain' package to calculate the stationary distribution.
+The stationary distribution can be calculated manually by solving the equations $\pi=P\pi$ and $\sum\limits_{\pi_i}=1$ where $P$ is the transition matrix and $\pi$ is the stationary distribution. However, with such large transition matrices it would be impractical do this by hand. I decided to use the 'markovchain' package to calculate the stationary distribution.
 
 
 
@@ -420,7 +436,9 @@ tidy_ss_remain <- tapply(tidy_ish_ss_remain$., tidy_ish_ss_remain$state, FUN=sum
 
 # rename with tidy labels
 names(tidy_ss_remain) <- state_space_proper
+```
 
+```{r, echo=FALSE}
 # display the stationary distribution
 df_ss_remain <- data.frame(Space=names(tidy_ss_remain), "Proportion of Time Spent"=tidy_ss_remain)
 rownames(df_ss_remain) <- NULL
@@ -450,16 +468,17 @@ prop_col_remain <- data.frame(tidy_ss_remain) %>%
 # proportion of time spent at each colour
 
 plot_remain <- prop_col_remain %>%
-  ggplot(aes(Colour, Proportion, col=Colour,group=1)) +
-  stat_summary(fun.y=sum, geom="line",col="black") +
-  geom_point(size=4) +
+  ggplot(aes(Colour, Proportion, fill=Colour)) +
+  theme_gdocs() +
+  geom_bar(stat="identity") +
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank()) +
   labs(x="Colour of set", y="Proportion of time spent", title="Proportion of Time Spent at Each Colour Set") +
   theme(legend.position = "none") +
   theme(plot.title = element_text(size=18)) +
-  scale_color_manual(values=c("brown","skyblue2","purple","orange","red","yellow","green","blue"))
+  scale_fill_manual(values=c("#884403","skyblue2","#CC0099","orange","#EE0000","yellow","#44BB11","#003399")) +
+  ylim(0,0.09)
 
 ```
 
@@ -506,7 +525,9 @@ tidy_ss_escape <- tapply(tidy_ish_ss_escape$., tidy_ish_ss_escape$state, FUN=sum
 
 # rename with tidy labels
 names(tidy_ss_escape) <- state_space_proper
+```
 
+```{r, echo=FALSE}
 # display the stationary distribution
 df_ss_escape <- data.frame(Space=names(tidy_ss_escape), "Proportion of Time Spent"=tidy_ss_escape)
 rownames(df_ss_escape) <- NULL
@@ -535,16 +556,17 @@ prop_col_escape <- data.frame(tidy_ss_escape) %>%
 # proportion of time spent at each colour
 
 plot_escape <- prop_col_escape %>%
-  ggplot(aes(Colour, Proportion, col=Colour,group=1)) +
-  stat_summary(fun.y=sum, geom="line",col="black") +
-  geom_point(size=4) +
+  ggplot(aes(Colour, Proportion, fill=Colour)) +
+  theme_gdocs() +
+  geom_bar(stat="identity") +
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank()) +
   labs(x="Colour of set", y="Proportion of time spent", title="Proportion of Time Spent at Each Colour Set") +
   theme(legend.position = "none") +
   theme(plot.title = element_text(size=18)) +
-  scale_color_manual(values=c("brown","skyblue2","purple","orange","red","yellow","green","blue"))
+  scale_fill_manual(values=c("#884403","skyblue2","#CC0099","orange","#EE0000","yellow","#44BB11","#003399")) +
+  ylim(0,0.09)
 
 ```
 
@@ -571,13 +593,201 @@ plot_escape
 </div>
 
 
+# Return on Investment
+
+<style>
+span[class^="rot"]:not([char]):before{
+content: '\27b7'; }
+span[class^="rot"][char]:before{content: attr(char);}
+span[class^="rot"] { position: relative; }
+span[class^="rot"]:before {
+ position: relative; display: inline-block;
+ font-weight: normal; font-size: 14px; line-height:15.5px;
+ font-family: Tahoma, Verdana, sans-serif;
+ margin:0;padding:0;
+ width:16px;height:16px;
+}
+.rot180:before { transform: rotate(180deg); }
+</style>
+<p>
+
+It has been made apparent that the orange and red sets are most commonly landed on. Is this to say that they are necessarily the most favourable options for seeing a return on a player's investment? Houses for the orange set only cost <span class=rot180 char="&#8361;"></span>100 whereas houses for the red set cost <span class=rot180 char="&#8361;"></span>150. However, more rent is received when opponents land on the red properties. There are several things that could be investigated, including the expected time to see a return on:
+
+* purchasing a property without owning the colour set,
+* purchasing a property resulting in ownership of a colour set,
+* building a house on a single property,
+* building houses on all properties in a colour set,
+* purchasing first, second, third and fourth stations.
+
+All are relatively simple to calculate with the stationary distributions, however for now I will focus on building houses - when I come back to finish this report I will investigate all of the listed points. Furthermore, for simplicity I will only consider the 'remain' strategy. The reason for this is that at the stage in which players are building houses it is likely that there are not many properties left and, if given the chance, players would choose to remain in jail for as long as possible. Again, when I return to finish this report I will also consider the 'escape' strategy.
+
+
+## Building a House on a Single Property {-}
+
+This section illustrates the expected number of rolls it takes to see a return on purchasing a single house for each property. This includes going from having one house to two, two houses to three, etc. The table below illustrates the expected time to see a return on a given investment for each property. For example, the entry in the "Second House" column for "Pentonville Road" describes the expected number of opponent rolls it takes to see a return on the <span class=rot180 char="&#8361;"></span>50 it cost to build the house. In this case, it is arouond 38 rolls.
 
 
 
+```{r, table_properties}
+
+# website containing data on rent, cost etc.
+url <- "http://www.jdawiseman.com/papers/trivia/monopoly-rents.html" # accessed 13/06/2020
+h <- read_html(url)
+tab <- h %>% html_nodes("table") 
+tab <- html_table(tab[[2]]) # extract desired table
+
+# tidy the table
+names(tab) <- tab[1,]
+tab <- tab[-1,]
+
+# detect properties and not stations/utilities
+ind <- str_detect(tab$Site,"^\\d*$")
+tab_properties <- tab[ind,]
+colnames(tab_properties) <- c("Property","Cost","Mortgage","Single","One_house","Two_houses","Three_houses","Four_houses","Hotel")
+
+tab_properties <- tab_properties %>% mutate(Set=as.numeric(Single)*2,
+                                       Cost=as.numeric(Cost),
+                                       Mortgage=as.numeric(Mortgage),
+                                       Single=as.numeric(Single),
+                                       One_house=as.numeric(One_house),
+                                       Two_houses=as.numeric(Two_houses),
+                                       Three_houses=as.numeric(Three_houses),
+                                       Four_houses=as.numeric(Four_houses),
+                                       Hotel=as.numeric(Hotel)) %>% select(c(1:4,10,5:9))
+
+# alter names that differ slightly
+tab_properties$Property[3] <- "The Angel, Islington"
+tab_properties$Property[12] <- "Strand"
+
+# define ling run proabilities for properties
+long_run_properties <- tidy_ss_remain[names(tidy_ss_remain)%in%tab_properties$Property]
+
+# expected income per roll for properties
+ipr_properties <- cbind(Property=tab_properties$Property,tab_properties[-1:-3]*tidy_ss_remain[names(tidy_ss_remain)%in%tab_properties$Property])
+
+# defining cost for houses on each property
+building_cost <- c(rep(50,5),rep(100,6),rep(150,6),rep(200,5))
+names(building_cost) <- tab_properties$Property
+
+# initialise empty data frame
+return_inv <- data.frame("First_House"=rep(0,22),"Second_House"=rep(0,22),"Third_House"=rep(0,22),"Fourth_House"=rep(0,22),"Hotel"=rep(0,22))
+
+# return_inv will contain the expected number of rolls to see return on investment for each property in each state
+for (j in 1:22) {
+  for (i in 1:5) {
+    return_inv[j,i] <- building_cost[j]/(ipr_properties[j,i+3]-ipr_properties[j,i+2])
+  }
+}
+
+return_inv <- cbind(Property=tab_properties$Property,return_inv)
+```
+
+```{r display_table, echo=FALSE}
+ret_inv_table <- kable(return_inv,col.names = gsub("[_]", " ", names(return_inv))) %>%
+  kable_styling(fixed_thead=T, bootstrap_options = c("hover", "condensed", "responsive")) %>%
+  row_spec(c(1,2), color = "white", background = "hsl(29, 69%, 34%)") %>%
+  row_spec(c(3:5), color = "black", background = "hsl(205, 82%, 73%)") %>%
+  row_spec(c(6:8), color = "white", background = "hsl(297, 77%, 47%)") %>%
+  row_spec(c(9:11), color = "black", background = "hsl(35, 100%, 54%)") %>%
+  row_spec(c(12:14), color = "white", background = "hsl(0, 76%, 49%)") %>%
+  row_spec(c(15:17), color = "black", background = "hsl(60, 88%, 60%)") %>%
+  row_spec(c(18:20), color = "white", background = "hsl(111, 74%, 39%)") %>%
+  row_spec(c(21,22), color = "white", background = "hsl(218, 62%, 33%)")
+
+ret_inv_table
+
+```
+
+The behaviour of the results is more apparent when observing the graph below. Interestingly, the quickest expected return on investments occurs when the third house is purchased. This means that if the property owner wishes to regain their investment ASAP then building three houses per property might be the optimal choice. However, although this strategy predicts that the property owner would see a quicker return on their investment it is worth noting that building a fourth house or a hotel would still be of interest as it aids in bankrupting other players. A property owner with a lot of cash would most likely want to build more than three houses, however a property owner short on cash (or who wishes to spend money building houses on other properties) would maybe prefer to stick with the optimal choice of three houses.
+
+It is also worth noting that the orange properties (Bow Street, Marlborough Street and and Vine Street) tend to result in a quick return on investment, particuarly when building a third house. Does this mean that players should always build on the orange properties when possible? Not necessarily, as if a player's opponent is on Free Parking then the favourable option would be to build on the yellow or green properties if possible. It is vital to remember that these are long run probabilities and decision making in a real game should really be made on a case by case basis. That being said, this information is still useful as the analysis so far suggests that the orange properties are more desirable than the pink/purple ones for example. In this case, a player may wish to trade early on in attempt to receive orange properties in exchange for purple ones. Giving up Whitehall and <span class=rot180 char="&#8361;"></span>150 in exchange for Bow Street may initially seem like a poor decision, however it may be worthwhile in the long run.
+
+__Note__: I'm sure some of the data visualisation maestros reading this might have a thing or two to say about using a line graph with categorical variables across the x-axis. However, I'll quickly argue my case for doing so. The first reason is that I am treating the spaces as ordinal data as there is a sense of order to going round the board. Quite a weak point I'll admit, however the second (and more convincing point) is that it makes for a far better visualisation. I don't even want to look at a clustered bar chart with twenty two clusters with five bars in each cluster. With the line graph it is immediately apparent which properties see quicker returns on investments. It is also easy to tell which stage of building houses is optimal for seeing a return on an investment - building the third house.
+
+```{r, fig.width=10,fig.height=8, echo=FALSE}
+
+temp_ret_inv <- cbind(return_inv %>% mutate(x=1:22),Cost=building_cost) %>% gather(House,Rolls,First_House:Hotel)
+temp_ret_inv <-  mutate(temp_ret_inv,House=factor(House,unique(House)))
+ggplot(temp_ret_inv,aes(x,Rolls,col=House)) +
+  theme_gdocs() +
+  geom_line(size=1.25) +
+  scale_y_continuous(trans="log10") +
+  scale_x_continuous(breaks=1:22, labels=tab_properties$Property) +
+  theme(axis.text.x = element_text(angle=90,hjust=1)) +
+  scale_colour_discrete(name = "Building", labels = gsub("_"," ",unique(temp_ret_inv$House))) +
+  theme(axis.title.x = element_blank()) +
+  ggtitle("Expected Number of Rolls to See Return on Investment") 
+
+
+```
 
 
 
+## Building a House on Each Property in a Colour Set {-}
+
+My experience of playing Monopoly&reg; has demonstrated that players will often simultaneously build houses on all properties in a colour set. Whether it be tactics, superstition or OCD it appears to happen so I decided to investigate it. This analysis is much the same as the previous section, however properties of the same colour are grouped together and treated as single assets.
+
+The conclusions drawn from this analysis are much the same as before, however the graph below makes it easier to view the expected return times by colour set. 
+
+
+```{r, set_analysis}
+
+# define colors of each property
+col_set <- c(rep("Brown",2),rep("Light blue",3),rep("Pink/purple",3),rep("Orange",3),rep("Red",3),rep("Yellow",3),rep("Green",3),rep("Dark blue",2))
+
+# income per roll for each colour set, treated as single assets
+ipr_set <- ipr_properties %>% mutate(Colour=factor(col_set,levels=unique(col_set))) %>% group_by(Colour)%>% summarise(Single=sum(Single),
+          Set=sum(Set),
+          One_house=sum(One_house),
+          Two_houses=sum(Two_houses),
+          Three_houses=sum(Three_houses),
+          Four_houses=sum(Four_houses),
+          Hotel=sum(Hotel))
+
+# cost for building on all properties in a colour set
+building_cost_set <- c(100,150,300,300,450,450,600,400)
+
+# initalise empty data frame
+return_inv_set <- data.frame("First_House"=rep(0,8),"Second_House"=rep(0,8),"Third_House"=rep(0,8),"Fourth_House"=rep(0,8),"Hotel"=rep(0,8))
+
+# return_inv_set will contain the expected number of rolls to see a return on investment when building on each set
+for (j in 1:8) {
+  for (i in 1:5) {
+    return_inv_set[j,i] <- building_cost_set[j]/(ipr_set[j,i+3]-ipr_set[j,i+2])
+  }
+}
+
+return_inv_set <- cbind(Colour=unique(col_set),return_inv_set)
+
+```
+
+```{r, set_table, echo=FALSE}
+
+kable(return_inv_set,col.names = gsub("[_]", " ", names(return_inv_set))) %>%
+  kable_styling(fixed_thead=T, bootstrap_options = c("hover", "condensed", "responsive")) %>%  
+  row_spec(c(1), color = "white", background = "hsl(29, 69%, 34%)") %>%
+  row_spec(c(2), color = "black", background = "hsl(205, 82%, 73%)") %>%
+  row_spec(c(3), color = "white", background = "hsl(297, 77%, 47%)") %>%
+  row_spec(c(4), color = "black", background = "hsl(35, 100%, 54%)") %>%
+  row_spec(c(5), color = "white", background = "hsl(0, 76%, 49%)") %>%
+  row_spec(c(6), color = "black", background = "hsl(60, 88%, 60%)") %>%
+  row_spec(c(7), color = "white", background = "hsl(111, 74%, 39%)") %>%
+  row_spec(c(8), color = "white", background = "hsl(218, 62%, 33%)")
+```
 
 
 
+```{r, fig.width=10,fig.height=8, echo=FALSE}
 
+temp_ret_inv_set <- cbind(return_inv_set %>% mutate(x=1:8),Cost=building_cost_set) %>% gather(House,Rolls,First_House:Hotel)
+temp_ret_inv_set <-  mutate(temp_ret_inv_set,House=factor(House,unique(House)))
+ggplot(temp_ret_inv_set,aes(x,Rolls,col=House)) +
+  theme_gdocs() +
+  geom_line(size=1.5) +
+  scale_y_continuous(trans="log10") +
+  scale_x_continuous(breaks=1:8, labels=unique(col_set)) +
+  theme(axis.text.x = element_text(angle=90,hjust=1)) +
+  scale_colour_discrete(name = "Building", labels = gsub("_"," ",unique(temp_ret_inv_set$House))) +
+  theme(axis.title.x = element_blank()) +
+  ggtitle("Expected Number of Rolls to See Return on Investment")
+```

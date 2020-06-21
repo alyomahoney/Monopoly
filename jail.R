@@ -30,7 +30,7 @@ ij_6d["0bow_street"] <- rolls["p_6d"]
 
 # 8d
 ij_8d <- empty
-ij_8d["0malborough_street"] <- rolls["p_8d"]
+ij_8d["0marlborough_street"] <- rolls["p_8d"]
 
 # 10d
 ij_10d <- empty
